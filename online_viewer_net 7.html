@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro Schach gegen Bot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Press Start 2P', cursive;
+            overscroll-behavior: none;
+            background-color: #000020; /* Dunkelblau für Retro-Feeling */
+            color: #00FF00; /* Neongrün für Text */
+        }
+        .chess-board {
+            display: grid;
+            grid-template-columns: repeat(8, minmax(0, 1fr));
+            grid-template-rows: repeat(8, minmax(0, 1fr));
+            width: 90vw;
+            height: 90vw;
+            max-width: 520px;
+            max-height: 520px;
+            border: 4px solid #FFFF00; /* Gelber Rand */
+            box-shadow: 0 0 15px #FFFF00, 0 0 25px #FFFF00 inset;
+            aspect-ratio: 1 / 1;
+            margin-bottom: 20px;
+        }
+        .square {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: clamp(18px, 5vw, 30px);
+            cursor: pointer;
+            user-select: none;
+            border: 1px solid #008000;
+        }
+        .light { background-color: #A0A0A0; color: #000000; }
+        .dark { background-color: #404040; color: #FFFFFF; }
+
+        /* Specific piece colors for better contrast on retro board */
+        .dark .piece-wK, .dark .piece-wQ, .dark .piece-wR, .dark .piece-wB, .dark .piece-wN, .dark .piece-wP { color: #E0E0E0; }
+        .light .piece-wK, .light .piece-wQ, .light .piece-wR, .light .piece-wB, .light .piece-wN, .light .piece-wP { color: #101010; }
+        .dark .piece-bK, .dark .piece-bQ, .dark .piece-bR, .dark .piece-bB, .dark .piece-bN, .dark .piece-bP { color: #181818; }
+        .light .piece-bK, .light .piece-bQ, .light .piece-bR, .light .piece-bB, .light .piece-bN, .light .piece-bP { color: #000000; }
+
+        .selected { background-color: #FF8C00 !important; outline: 3px solid #FFFF00; }
+        .possible-move { background-color: #00FF00 !important; opacity: 0.5; }
+        .in-check { animation: blink-check 0.7s infinite; }
+        @keyframes blink-check {
+            0%, 100% { background-color: #FF0000; color: #FFFF00; }
+            50% { background-color: inherit; color: inherit; }
+        }
+
+        .retro-ui-panel {
+            background-color: #000040; border: 3px solid #00FFFF; padding: 15px;
+            margin-bottom: 20px; box-shadow: 0 0 10px #00FFFF; text-align: center;
+        }
+        .retro-button {
+            background-color: #FFFF00; color: #000000; border: 3px solid #FF8C00;
+            padding: 10px 15px; text-transform: uppercase; box-shadow: 3px 3px 0px #FF8C00;
+            cursor: pointer; transition: all 0.1s ease;
+        }
+        .retro-button:hover { background-color: #FFD700; box-shadow: 1px 1px 0px #FF8C00; transform: translate(2px, 2px); }
+        .retro-button:active { background-color: #FFA500; box-shadow: 0px 0px 0px #FF8C00; transform: translate(3px, 3px); }
+
+        #promotion-dialog { background-color: rgba(0,0,32,0.85); }
+        #promotion-dialog > div { background-color: #000020; border: 4px solid #FFFF00; color: #FFFF00; }
+        .promotion-option {
+            font-size: 30px; padding: 10px; margin: 0 5px; border: 2px solid #00FF00;
+            background-color: #000040; color: #00FF00;
+        }
+        .promotion-option:hover { background-color: #00FF00; color: #000020; }
+        .hidden { display: none !important; }
+        #captured-pieces-area { color: #00FF00; font-size: 0.8em; }
+        #captured-pieces-area strong { color: #FFFF00; }
+        .status-text { color: #FFFF00; }
+        .player-turn-text { color: #00FF00; }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-2 sm:p-4">
+
+    <div class="w-full max-w-xl">
+        <h1 class="text-2xl sm:text-3xl font-bold text-center text-yellow-400 mb-4 tracking-wider">RETRO SCHACH</h1>
+
+        <div id="game-info" class="retro-ui-panel text-sm sm:text-base">
+            <p>AM ZUG: <span id="player-turn" class="font-semibold player-turn-text">WEISS</span></p>
+            <p id="status-message" class="mt-1 font-semibold status-text h-6"></p>
+            <p id="sound-status" class="text-xs mt-2 text-cyan-400"></p> </div>
+
+        <div id="promotion-dialog" class="hidden fixed inset-0 flex items-center justify-center z-50 p-4">
+            <div class="p-5 sm:p-8 rounded-lg shadow-xl text-center">
+                <h3 class="text-lg sm:text-xl font-semibold mb-4">BAUERN-POWERUP!</h3>
+                <p class="mb-4 text-sm sm:text-base">WAEHLE FIGUR:</p>
+                <div class="flex justify-around">
+                    <button data-piece="Q" class="promotion-option">♕</button>
+                    <button data-piece="R" class="promotion-option">♖</button>
+                    <button data-piece="B" class="promotion-option">♗</button>
+                    <button data-piece="N" class="promotion-option">♘</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="chess-board mx-auto rounded-md overflow-hidden">
+            </div>
+
+        <div class="mt-5 text-center">
+            <button id="restart-button" class="retro-button text-sm sm:text-base">
+                NEUSTART
+            </button>
+        </div>
+         <div id="captured-pieces-area" class="retro-ui-panel mt-4 text-xs sm:text-sm">
+            <h3 class="text-base sm:text-lg font-semibold mb-2 text-center">GEFANGENE</h3>
+            <div class="flex justify-between">
+                <div id="captured-white" class=""><strong>BOT (SCHWARZ):</strong> <span class="pieces"></span></div>
+                <div id="captured-black" class=""><strong>DU (WEISS):</strong> <span class="pieces"></span></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const chessboardElement = document.querySelector('.chess-board');
+            const playerTurnElement = document.getElementById('player-turn');
+            const statusMessageElement = document.getElementById('status-message');
+            const soundStatusElement = document.getElementById('sound-status'); // For sound status
+            const restartButton = document.getElementById('restart-button');
+            const promotionDialog = document.getElementById('promotion-dialog');
+            const promotionOptions = promotionDialog.querySelectorAll('.promotion-option');
+            const capturedWhiteElement = document.getElementById('captured-white').querySelector('.pieces');
+            const capturedBlackElement = document.getElementById('captured-black').querySelector('.pieces');
+
+            let soundsInitialized = false;
+            let moveSound, captureSound, checkSound, gameOverSound, promoteSound;
+
+            function initializeAudioSynths() {
+                moveSound = new Tone.Synth({
+                    oscillator: { type: 'square' },
+                    envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 }
+                }).toDestination();
+                captureSound = new Tone.Synth({
+                    oscillator: { type: 'sawtooth' },
+                    envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.2 },
+                    volume: -6
+                }).toDestination();
+                checkSound = new Tone.Synth({
+                    oscillator: { type: 'triangle' },
+                    envelope: { attack: 0.05, decay: 0.3, sustain: 0, release: 0.1 },
+                    volume: -3
+                }).toDestination();
+                gameOverSound = new Tone.NoiseSynth({
+                    noise: { type: 'white' },
+                    envelope: { attack: 0.01, decay: 0.5, sustain: 0, release: 0.1 },
+                    volume: -10
+                }).toDestination();
+                promoteSound = new Tone.Synth({
+                    oscillator: { type: 'sine' },
+                    envelope: { attack: 0.1, decay: 0.3, sustain: 0.2, release: 0.5 },
+                    volume: -5
+                }).toDestination();
+                console.log("Tone.js synths created.");
+                soundStatusElement.textContent = "SOUNDS AKTIV!";
+            }
+
+            function initializeSoundsInteraction() {
+                if (Tone.context.state !== 'running') {
+                    Tone.start().then(() => {
+                        soundsInitialized = true;
+                        initializeAudioSynths(); // Create synths AFTER Tone.start()
+                        console.log("Audio context started by user interaction!");
+                    }).catch(e => {
+                        console.error("Tone.start failed:", e);
+                        soundStatusElement.textContent = "SOUNDS FEHLGESCHLAGEN.";
+                    });
+                } else {
+                     // Context already running, maybe from a previous interaction or browser setting
+                    if (!soundsInitialized) { // Ensure synths are created if not already
+                        soundsInitialized = true;
+                        initializeAudioSynths();
+                        console.log("Audio context was already running.");
+                    }
+                }
+            }
+            // Add event listener to the body for the first interaction
+            document.body.addEventListener('click', initializeSoundsInteraction, { once: true });
+            soundStatusElement.textContent = "KLICK ZUM AKTIVIEREN DER SOUNDS";
+
+
+            function playSound(type) {
+                if (!soundsInitialized || !moveSound) { // Check if synths are created
+                    console.log("Sounds not ready or synths not initialized.");
+                    return;
+                }
+                try {
+                    const now = Tone.now();
+                    switch(type) {
+                        case 'move': moveSound.triggerAttackRelease('C4', '8n', now); break;
+                        case 'capture': captureSound.triggerAttackRelease('A3', '4n', now); break;
+                        case 'check': checkSound.triggerAttackRelease('G5', '4n', now + 0.05); break;
+                        case 'gameover':
+                            gameOverSound.triggerAttackRelease("2n", now);
+                            gameOverSound.triggerAttackRelease("2n", now + 0.3);
+                            break;
+                        case 'promote': promoteSound.triggerAttackRelease('E5', '2n', now); break;
+                    }
+                } catch (e) {
+                    console.error("Sound play error:", e);
+                }
+            }
+
+            const PIECES_UNICODE = {
+                'wK': '♔', 'wQ': '♕', 'wR': '♖', 'wB': '♗', 'wN': '♘', 'wP': '♙',
+                'bK': '♚', 'bQ': '♛', 'bR': '♜', 'bB': '♝', 'bN': '♞', 'bP': '♟︎',
+                'empty': ''
+            };
+
+            let board = [];
+            let currentPlayer = 'w';
+            let selectedPiece = null;
+            let possibleMoves = [];
+            let gameActive = true;
+            let whiteKingPosition = { row: 7, col: 4 };
+            let blackKingPosition = { row: 0, col: 4 };
+            let awaitingPromotion = null;
+            let capturedWhitePieces = [];
+            let capturedBlackPieces = [];
+
+            function initializeBoard() {
+                board = [
+                    ['bR', 'bN', 'bB', 'bQ', 'bK', 'bB', 'bN', 'bR'],
+                    ['bP', 'bP', 'bP', 'bP', 'bP', 'bP', 'bP', 'bP'],
+                    ['empty', 'empty', 'empty', 'empty', 'empty', 'empty', 'empty', 'empty'],
+                    ['empty', 'empty', 'empty', 'empty', 'empty', 'empty', 'empty', 'empty'],
+                    ['empty', 'empty', 'empty', 'empty', 'empty', 'empty', 'empty', 'empty'],
+                    ['empty', 'empty', 'empty', 'empty', 'empty', 'empty', 'empty', 'empty'],
+                    ['wP', 'wP', 'wP', 'wP', 'wP', 'wP', 'wP', 'wP'],
+                    ['wR', 'wN', 'wB', 'wQ', 'wK', 'wB', 'wN', 'wR']
+                ];
+                currentPlayer = 'w';
+                selectedPiece = null;
+                possibleMoves = [];
+                gameActive = true;
+                whiteKingPosition = { row: 7, col: 4 };
+                blackKingPosition = { row: 0, col: 4 };
+                awaitingPromotion = null;
+                promotionDialog.classList.add('hidden');
+                capturedWhitePieces = [];
+                capturedBlackPieces = [];
+                updateCapturedPiecesDisplay();
+
+                statusMessageElement.textContent = '';
+                if (!soundsInitialized) {
+                     soundStatusElement.textContent = "KLICK ZUM AKTIVIEREN DER SOUNDS";
+                } else if (Tone.context.state === 'running' && moveSound) {
+                     soundStatusElement.textContent = "SOUNDS AKTIV!";
+                } else {
+                     soundStatusElement.textContent = "SOUNDS FEHLGESCHLAGEN.";
+                }
+                renderBoard();
+                updatePlayerTurnDisplay();
+                checkGameState();
+            }
+
+            function renderBoard() {
+                chessboardElement.innerHTML = '';
+                let kingInCheckDetails = null;
+                if (gameActive) {
+                    const kingColorToCheck = currentPlayer;
+                    const kingPos = kingColorToCheck === 'w' ? whiteKingPosition : blackKingPosition;
+                     if (isKingInCheck(kingColorToCheck, board, kingPos)) {
+                        kingInCheckDetails = { row: kingPos.row, col: kingPos.col, color: kingColorToCheck };
+                    }
+                }
+
+                for (let r = 0; r < 8; r++) {
+                    for (let c = 0; c < 8; c++) {
+                        const square = document.createElement('div');
+                        square.classList.add('square');
+                        square.classList.add((r + c) % 2 === 0 ? 'light' : 'dark');
+                        square.dataset.row = r;
+                        square.dataset.col = c;
+
+                        const piece = board[r][c];
+                        const pieceSpan = document.createElement('span');
+                        pieceSpan.textContent = PIECES_UNICODE[piece] || '';
+                        if (piece !== 'empty') {
+                            pieceSpan.classList.add(`piece-${piece.charAt(0)}`); // e.g. piece-w or piece-b
+                            pieceSpan.classList.add(`piece-${piece}`); // e.g. piece-wK for specific styling if needed
+                        }
+                        square.appendChild(pieceSpan);
+
+                        if (selectedPiece && selectedPiece.row === r && selectedPiece.col === c) {
+                            square.classList.add('selected');
+                        }
+                        if (possibleMoves.some(move => move.row === r && move.col === c)) {
+                            square.classList.add('possible-move');
+                        }
+                        if (kingInCheckDetails && kingInCheckDetails.row === r && kingInCheckDetails.col === c) {
+                            if (board[r][c] === kingInCheckDetails.color + 'K') {
+                                square.classList.add('in-check');
+                            }
+                        }
+                        square.addEventListener('click', () => handleSquareClick(r, c));
+                        chessboardElement.appendChild(square);
+                    }
+                }
+            }
+            
+            function updateCapturedPiecesDisplay() {
+                capturedWhiteElement.innerHTML = capturedWhitePieces.map(p => PIECES_UNICODE[p]).join(' ');
+                capturedBlackElement.innerHTML = capturedBlackPieces.map(p => PIECES_UNICODE[p]).join(' ');
+            }
+
+            function handleSquareClick(row, col) {
+                // initializeSoundsInteraction() is called by body click once, so Tone should be ready or trying to start.
+                if (!gameActive || awaitingPromotion) return;
+                if (currentPlayer === 'b' && !selectedPiece) return;
+
+                const clickedPiece = board[row][col];
+
+                if (selectedPiece) {
+                    if (possibleMoves.some(move => move.row === row && move.col === col)) {
+                        const isCapture = board[row][col] !== 'empty';
+                        makeMove(selectedPiece.row, selectedPiece.col, row, col);
+                        playSound(isCapture ? 'capture' : 'move');
+                        
+                        if ((selectedPiece.piece === 'wP' && row === 0) || (selectedPiece.piece === 'bP' && row === 7)) {
+                            awaitingPromotion = { row, col, pieceColor: getPieceColor(board[row][col]) };
+                            promotionDialog.classList.remove('hidden');
+                            selectedPiece = null;
+                            possibleMoves = [];
+                            renderBoard();
+                            return;
+                        }
+                        selectedPiece = null;
+                        possibleMoves = [];
+                        switchPlayer();
+                    } else if (clickedPiece !== 'empty' && getPieceColor(clickedPiece) === currentPlayer) {
+                        selectedPiece = { piece: clickedPiece, row, col };
+                        possibleMoves = getLegalMovesForPiece(clickedPiece, row, col, board);
+                        // playSound('move'); // Sound for selecting a piece - can be too much
+                    } else {
+                        selectedPiece = null;
+                        possibleMoves = [];
+                    }
+                } else if (clickedPiece !== 'empty' && getPieceColor(clickedPiece) === currentPlayer) {
+                    selectedPiece = { piece: clickedPiece, row, col };
+                    possibleMoves = getLegalMovesForPiece(clickedPiece, row, col, board);
+                    // playSound('move'); // Sound for selecting a piece
+                }
+                renderBoard();
+            }
+
+            promotionOptions.forEach(option => {
+                option.addEventListener('click', () => {
+                    if (!awaitingPromotion) return;
+                    const newPieceType = option.dataset.piece;
+                    const { row, col, pieceColor } = awaitingPromotion;
+                    board[row][col] = pieceColor + newPieceType;
+                    
+                    awaitingPromotion = null;
+                    promotionDialog.classList.add('hidden');
+                    playSound('promote');
+                    
+                    renderBoard(); 
+                    checkGameState(); 
+                    if (gameActive && currentPlayer === 'b') { 
+                         setTimeout(makeBotMove, 700);
+                    }
+                });
+            });
+
+            function makeMove(fromRow, fromCol, toRow, toCol, tempBoard = board) {
+                const pieceToMove = tempBoard[fromRow][fromCol];
+                const capturedPiece = tempBoard[toRow][toCol];
+
+                if (tempBoard === board && capturedPiece !== 'empty') {
+                    if (getPieceColor(capturedPiece) === 'w') capturedBlackPieces.push(capturedPiece);
+                    else capturedWhitePieces.push(capturedPiece);
+                }
+                tempBoard[toRow][toCol] = pieceToMove;
+                tempBoard[fromRow][fromCol] = 'empty';
+                if (pieceToMove === 'wK') whiteKingPosition = { row: toRow, col: toCol };
+                if (pieceToMove === 'bK') blackKingPosition = { row: toRow, col: toCol };
+                if (tempBoard === board) updateCapturedPiecesDisplay();
+            }
+
+            function switchPlayer() {
+                currentPlayer = (currentPlayer === 'w') ? 'b' : 'w';
+                updatePlayerTurnDisplay();
+                checkGameState();
+                if (gameActive && currentPlayer === 'b') setTimeout(makeBotMove, 700);
+            }
+
+            function updatePlayerTurnDisplay() {
+                playerTurnElement.textContent = currentPlayer === 'w' ? 'WEISS (DU)' : 'SCHWARZ (BOT)';
+            }
+
+            function getPieceColor(piece) {
+                if (piece === 'empty') return null;
+                return piece.charAt(0);
+            }
+
+            function getPossibleMovesForPieceInternal(piece, r, c, currentBoard) {
+                const moves = []; const color = getPieceColor(piece); const type = piece.charAt(1);
+                function addMove(tR, tC) {
+                    if (tR>=0&&tR<8&&tC>=0&&tC<8) {
+                        const tP = currentBoard[tR][tC];
+                        if (tP==='empty'||getPieceColor(tP)!==color) moves.push({row:tR,col:tC});
+                        return tP==='empty';
+                    } return false;
+                }
+                function addLine(rI,cI) { for(let i=1;i<8;i++) if(!addMove(r+i*rI,c+i*cI))break; }
+                switch(type){
+                    case 'P':const d=color==='w'?-1:1; const sR=color==='w'?6:1; if(r+d>=0&&r+d<8&&currentBoard[r+d][c]==='empty'){addMove(r+d,c);if(r===sR&&currentBoard[r+2*d][c]==='empty')addMove(r+2*d,c);} [-1,1].forEach(cO=>{if(c+cO>=0&&c+cO<8&&r+d>=0&&r+d<8){const tP=currentBoard[r+d][c+cO];if(tP!=='empty'&&getPieceColor(tP)!==color)addMove(r+d,c+cO);}}); break;
+                    case 'R':addLine(1,0);addLine(-1,0);addLine(0,1);addLine(0,-1);break;
+                    case 'N':[[1,2],[1,-2],[-1,2],[-1,-2],[2,1],[2,-1],[-2,1],[-2,-1]].forEach(m=>addMove(r+m[0],c+m[1]));break;
+                    case 'B':addLine(1,1);addLine(1,-1);addLine(-1,1);addLine(-1,-1);break;
+                    case 'Q':addLine(1,0);addLine(-1,0);addLine(0,1);addLine(0,-1);addLine(1,1);addLine(1,-1);addLine(-1,1);addLine(-1,-1);break;
+                    case 'K':[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]].forEach(m=>addMove(r+m[0],c+m[1]));break;
+                } return moves;
+            }
+            function isSquareAttacked(row,col,attackerColor,cB){for(let r0=0;r0<8;r0++)for(let c0=0;c0<8;c0++){const p=cB[r0][c0];if(p!=='empty'&&getPieceColor(p)===attackerColor){const aM=getPossibleMovesForPieceInternal(p,r0,c0,cB);if(aM.some(m=>m.row===row&&m.col===col))return true;}} return false;}
+            function isKingInCheck(kingColor,cB,kP){if(!kP){kP=kingColor==='w'?whiteKingPosition:blackKingPosition;let fK=false;for(let r0=0;r0<8;r0++){for(let c0=0;c0<8;c0++){if(cB[r0][c0]===(kingColor+'K')){kP={row:r0,col:c0};fK=true;break;}}if(fK)break;}} const attC=kingColor==='w'?'b':'w'; return isSquareAttacked(kP.row,kP.col,attC,cB);}
+            function getLegalMovesForPiece(piece,r,c,cB){const potM=getPossibleMovesForPieceInternal(piece,r,c,cB);const legM=[];const pC=getPieceColor(piece);potM.forEach(m=>{const tB=JSON.parse(JSON.stringify(cB));let tWKP={...whiteKingPosition};let tBKP={...blackKingPosition};const mvP=tB[r][c];tB[m.row][m.col]=mvP;tB[r][c]='empty';let kPFC;if(pC==='w'){if(mvP==='wK')tWKP={row:m.row,col:m.col};kPFC=tWKP;}else{if(mvP==='bK')tBKP={row:m.row,col:m.col};kPFC=tBKP;} if(!isKingInCheck(pC,tB,kPFC))legM.push(m);});return legM;}
+            function getAllLegalMovesForPlayer(pC,cB){const allM=[];for(let r0=0;r0<8;r0++)for(let c0=0;c0<8;c0++){const p=cB[r0][c0];if(p!=='empty'&&getPieceColor(p)===pC){const M=getLegalMovesForPiece(p,r0,c0,cB);M.forEach(m=>allM.push({fromRow:r0,fromCol:c0,toRow:m.row,toCol:m.col,piece:p}));}} return allM;}
+            function checkGameState(){if(!gameActive)return;const kP=currentPlayer==='w'?whiteKingPosition:blackKingPosition;const legM=getAllLegalMovesForPlayer(currentPlayer,board);const kICC=isKingInCheck(currentPlayer,board,kP);if(legM.length===0){if(kICC){statusMessageElement.textContent=`SCHACHMATT! ${currentPlayer==='w'?'SCHWARZ':'WEISS'} GEWINNT!`;playSound('gameover');gameActive=false;}else{statusMessageElement.textContent='PATT! UNENTSCHIEDEN.';playSound('gameover');gameActive=false;}}else if(kICC){statusMessageElement.textContent=`${currentPlayer==='w'?'WEISS':'SCHWARZ'} IST IM SCHACH!`;playSound('check');}else{statusMessageElement.textContent='';}renderBoard();}
+            function makeBotMove(){if(!gameActive||currentPlayer!=='b')return;const legM=getAllLegalMovesForPlayer('b',board);if(legM.length>0){const rM=legM[Math.floor(Math.random()*legM.length)];const iC=board[rM.toRow][rM.toCol]!=='empty';makeMove(rM.fromRow,rM.fromCol,rM.toRow,rM.toCol);playSound(iC?'capture':'move');if(rM.piece==='bP'&&rM.toRow===7){board[rM.toRow][rM.toCol]='bQ';playSound('promote');} switchPlayer();}else{checkGameState();}renderBoard();}
+
+            restartButton.addEventListener('click', initializeBoard);
+            initializeBoard(); // Initial game setup
+        });
+    </script>
+
+</body>
+</html>
